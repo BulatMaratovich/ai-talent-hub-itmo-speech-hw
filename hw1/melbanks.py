@@ -4,7 +4,6 @@ import torch
 from torch import nn
 from torchaudio import functional as F
 
-
 class LogMelFilterBanks(nn.Module):
     def __init__(
             self,
@@ -24,7 +23,6 @@ class LogMelFilterBanks(nn.Module):
             mel_scale: str = 'htk'
         ):
         super(LogMelFilterBanks, self).__init__()
-          
         self.n_fft = n_fft
         self.samplerate = samplerate
         self.window_length = n_fft
@@ -44,13 +42,6 @@ class LogMelFilterBanks(nn.Module):
         self.mel_fbanks = self._init_melscale_fbanks()
 
     def _init_melscale_fbanks(self):
-        """
-        Initializes the mel filterbanks using torchaudio's melscale_fbanks function.
-        These filterbanks map linear frequency bins to mel frequency bins.
-        
-        Returns:
-            Torch.Tensor: A tensor of shape (n_freqs, n_mels) representing the mel filterbanks.
-        """
         return F.melscale_fbanks(
             n_freqs=self.n_fft // 2 + 1,
             f_min=self.f_min_hz,
@@ -62,16 +53,8 @@ class LogMelFilterBanks(nn.Module):
         )
 
     def spectrogram(self, x):
-        """
-        Computes the spectrogram of the input audio signal using Short-Time Fourier Transform (STFT).
-        
-        Args:
-            x (Torch.Tensor): Input audio signal of shape (batch, time).
-        
-        Returns:
-            Torch.Tensor: Spectrogram of shape (batch, freq_bins, time_frames) if `return_complex=True`,
-                          otherwise (batch, freq_bins, time_frames, 2) for real and imaginary parts.
-        """
+        # Ensure the window tensor is on the same device as the input tensor
+        self.window = self.window.to(x.device)
         return torch.stft(
             x,
             n_fft=self.n_fft,
@@ -105,9 +88,17 @@ class LogMelFilterBanks(nn.Module):
         
         batch_size = specs.shape[0]
         specs_t = specs.transpose(1, 2)
-        mel_fbanks_expanded = self.mel_fbanks.unsqueeze(0).expand(batch_size, -1, -1)
+        mel_fbanks_expanded = self.mel_fbanks.unsqueeze(0).expand(batch_size, -1, -1).to(x.device)
         mel_specs_t = torch.bmm(specs_t, mel_fbanks_expanded)
         mel_specs = mel_specs_t.transpose(1, 2)
         log_mel_specs = torch.log(mel_specs + 1e-6)
         
         return log_mel_specs
+
+    def to(self, *args, **kwargs):
+        # Move the module to the specified device
+        self = super().to(*args, **kwargs)
+        # Ensure the window tensor is moved to the same device
+        self.window = self.window.to(*args, **kwargs)
+        self.mel_fbanks = self.mel_fbanks.to(*args, **kwargs)
+        return self
